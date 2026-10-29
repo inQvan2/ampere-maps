@@ -1,0 +1,33 @@
+# Builds cuba.pmtiles (OpenMapTiles schema, z0-14) with Planetiler and publishes it as a release asset.
+name: Build Cuba map
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build cuba.pmtiles
+        run: |
+          curl -fsSL -o planetiler.jar https://github.com/onthegomap/planetiler/releases/latest/download/planetiler.jar
+          # --download fetches the Geofabrik extract plus the world water polygons and Natural Earth.
+          java -Xmx4g -jar planetiler.jar --download --area=cuba --output=cuba.pmtiles
+          ls -l cuba.pmtiles
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="cuba-$(date -u +%Y-%m-%d)"
+          gh release create "$tag" cuba.pmtiles --repo "$GITHUB_REPOSITORY" \
+            --title "Mapa de Cuba $(date -u +%Y-%m-%d)" \
+            --notes "Mapa vectorial de Cuba (esquema OpenMapTiles, zoom 0-14) generado con Planetiler a partir de OpenStreetMap. © OpenStreetMap contributors (ODbL)."
