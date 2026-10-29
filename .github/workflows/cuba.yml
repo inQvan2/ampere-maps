@@ -40,6 +40,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="cuba-$(date -u +%Y-%m-%d)"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
           gh release create "$tag" cuba.pmtiles --repo "$GITHUB_REPOSITORY" \
             --title "Mapa de Cuba $(date -u +%Y-%m-%d)" \
             --notes "Mapa vectorial de Cuba (esquema OpenMapTiles, zoom 0-14) generado con Planetiler a partir de OpenStreetMap. © OpenStreetMap contributors (ODbL)."
+
+      # After the release, so cuba.json never points to a file that is not there yet. The app reads it from
+      # raw.githubusercontent.com, which has no per-IP limit like the GitHub API (60 an hour, shared behind NAT).
+      - name: Point cuba.json to the new map
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$TAG"
+          jq -n --arg tag "$tag" \
+            --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/cuba.pmtiles" \
+            --argjson size "$(stat -c %s cuba.pmtiles)" \
+            '{tag: $tag, url: $url, size: $size}' > cuba.json
+          cat cuba.json >> "$GITHUB_STEP_SUMMARY"
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/cuba.json" --jq .sha 2>/dev/null) || sha=""
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/cuba.json" \
+            -f message="chore: point cuba.json to $tag" \
+            -f content="$(base64 -w0 cuba.json)" \
+            ${sha:+-f sha="$sha"}
