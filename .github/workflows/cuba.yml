@@ -1,8 +1,16 @@
-# Builds cuba.pmtiles (OpenMapTiles schema, z0-14) with Planetiler and publishes it as a release asset.
+# Builds cuba.pmtiles (OpenMapTiles schema, z0-14 by default) with Planetiler and publishes it as a release asset.
 name: Build Cuba map
 
 on:
   workflow_dispatch:
+    inputs:
+      args:
+        description: Extra Planetiler arguments, e.g. --exclude-layers=housenumber
+        default: ''
+      publish:
+        description: Publish the file as a release (off to only measure its size)
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -17,13 +25,17 @@ jobs:
           java-version: '21'
 
       - name: Build cuba.pmtiles
+        env:
+          ARGS: ${{ inputs.args }}
         run: |
           curl -fsSL -o planetiler.jar https://github.com/onthegomap/planetiler/releases/latest/download/planetiler.jar
           # --download fetches the Geofabrik extract plus the world water polygons and Natural Earth.
-          java -Xmx4g -jar planetiler.jar --download --area=cuba --output=cuba.pmtiles
+          java -Xmx4g -jar planetiler.jar --download --area=cuba --output=cuba.pmtiles $ARGS
           ls -l cuba.pmtiles
+          echo "cuba.pmtiles: $(stat -c %s cuba.pmtiles) bytes ($ARGS)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish release
+        if: inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
