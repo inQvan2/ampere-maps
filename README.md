@@ -26,9 +26,8 @@ Cada versión se publica en [Releases](../../releases) como `app-vX.Y.Z`, con **
 
 `SHA256SUMS` lleva la suma de cada uno. Si se instala el que no corresponde, Android lo rechaza.
 
-Se compilan enteros en GitHub (Actions → «Build APK») a partir del código privado de la app: al subir una etiqueta
-`vX.Y.Z` en `ampere`, su flujo «Release APK» lanza este. También se puede lanzar a mano con una etiqueta o una rama
-(una rama solo deja los APK como artefacto, sin publicar). `apk.json` apunta a la última versión (`tag`, `version`,
-`build` y la `url` y el `size` de cada APK), igual que `cuba.json` con el mapa.
+Se compilan y firman en GitHub, en el repositorio privado de la app, al subir allí una etiqueta `vX.Y.Z`; aquí solo
+llega la publicación final. `apk.json` apunta a la última versión (`tag`, `version`, `build` y la `url` y el `size` de
+cada APK), igual que `cuba.json` con el mapa.
 
 Los datos son © colaboradores de [OpenStreetMap](https://www.openstreetmap.org/copyright), bajo licencia ODbL.
