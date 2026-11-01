@@ -1,1 +1,15 @@
-{"tag":"cuba-2026-10-29","url":"https://github.com/inQvan2/ampere-maps/releases/download/cuba-2026-10-29/cuba.pmtiles","size":89415757}
+{
+ "tag": "cuba-2026-10-29",
+ "url": "https://github.com/inQvan2/ampere-maps/releases/download/cuba-2026-10-29/cuba.pmtiles",
+ "size": 89415757,
+ "routing": {
+  "tag": "cuba-2026-11-01",
+  "url": "https://github.com/inQvan2/ampere-maps/releases/download/cuba-2026-11-01/cuba-valhalla.tar.gz",
+  "size": 48313601,
+  "unpackedSize": 110407680,
+  "sha256": "724cd3e9f3a47970552ff3f8b22a5acaf3096d4862b540854deb605ca6faba67",
+  "osmDate": "2026-10-31T23:10:15Z",
+  "engine": "valhalla",
+  "formatVersion": 1
+ }
+}
