@@ -1,38 +1,85 @@
-# Builds cuba.pmtiles (OpenMapTiles schema, z0-14 by default) with Planetiler and publishes it as a release asset.
-name: Build Cuba map
+# Builds the Cuba offline data from ONE Geofabrik extract and publishes it as a release:
+#   cuba.pmtiles          the map (OpenMapTiles schema, z0-14), with Planetiler
+#   cuba-valhalla.tar.gz  the routing data (Valhalla tiles, gzip), with the official valhalla-scripted image
+# Then it rewrites cuba.json, which the app reads to know what to download. A part that is not rebuilt keeps pointing
+# to its file in an earlier release (same tag and sha256), so no app downloads it again.
+name: Build Cuba data
 
 on:
   workflow_dispatch:
     inputs:
+      parts:
+        description: What to build (the other part keeps its earlier release)
+        type: choice
+        options: [both, routing, map]
+        default: both
       args:
         description: Extra Planetiler arguments, e.g. --exclude-layers=housenumber
         default: ''
       publish:
-        description: Publish the file as a release (off to only measure its size)
+        description: Publish the files as a release (off to only measure them)
         type: boolean
         default: true
 
 permissions:
   contents: write
 
+concurrency:
+  group: cuba-data
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      PARTS: ${{ inputs.parts }}
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the extract
+        run: |
+          mkdir -p out data/sources
+          # -R keeps Geofabrik's Last-Modified as the file date: it is the extract date of every part built here.
+          curl -fsSL -R -o data/sources/cuba.osm.pbf https://download.geofabrik.de/central-america/cuba-latest.osm.pbf
+          echo "OSM_DATE=$(date -u -r data/sources/cuba.osm.pbf +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          ls -l data/sources/cuba.osm.pbf
+
       - uses: actions/setup-java@v4
+        if: inputs.parts != 'routing'
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Build cuba.pmtiles
+        if: inputs.parts != 'routing'
         env:
           ARGS: ${{ inputs.args }}
         run: |
           curl -fsSL -o planetiler.jar https://github.com/onthegomap/planetiler/releases/latest/download/planetiler.jar
-          # --download fetches the Geofabrik extract plus the world water polygons and Natural Earth.
-          java -Xmx4g -jar planetiler.jar --download --area=cuba --output=cuba.pmtiles $ARGS
-          ls -l cuba.pmtiles
-          echo "cuba.pmtiles: $(stat -c %s cuba.pmtiles) bytes ($ARGS)" >> "$GITHUB_STEP_SUMMARY"
+          # The extract is already in data/sources/cuba.osm.pbf; --download should only fetch what is missing (the
+          # world water polygons and Natural Earth). Check the log for a second download of the extract.
+          java -Xmx4g -jar planetiler.jar --download --area=cuba --output=out/cuba.pmtiles $ARGS
+          ls -l out/cuba.pmtiles
+
+      - name: Build cuba-valhalla.tar.gz
+        if: inputs.parts != 'map'
+        run: |
+          mkdir -p valhalla
+          cp data/sources/cuba.osm.pbf valhalla/cuba-latest.osm.pbf
+          # serve_tiles=False: build valhalla_tiles.tar (with road grades from the elevation tiles) and exit.
+          docker run --rm -v "$PWD/valhalla:/custom_files" \
+            -e serve_tiles=False -e build_elevation=True -e build_admins=False -e build_time_zones=False \
+            ghcr.io/valhalla/valhalla-scripted:latest
+          ls -l valhalla/valhalla_tiles.tar
+          stat -c %s valhalla/valhalla_tiles.tar > valhalla-unpacked-size
+          # -n leaves the name and date out of the gzip header, so the same tiles give the same file.
+          gzip -n -c valhalla/valhalla_tiles.tar > out/cuba-valhalla.tar.gz
+          ls -l out/cuba-valhalla.tar.gz
+
+      - name: Sizes and checksums
+        run: |
+          cd out
+          sha256sum * > SHA256SUMS
+          { echo "Parts: $PARTS. Extract: $OSM_DATE"; echo '```'; ls -l; cat SHA256SUMS; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish release
         if: inputs.publish
@@ -41,25 +88,45 @@ jobs:
         run: |
           tag="cuba-$(date -u +%Y-%m-%d)"
           echo "TAG=$tag" >> "$GITHUB_ENV"
-          gh release create "$tag" cuba.pmtiles --repo "$GITHUB_REPOSITORY" \
-            --title "Mapa de Cuba $(date -u +%Y-%m-%d)" \
-            --notes "Mapa vectorial de Cuba (esquema OpenMapTiles, zoom 0-14) generado con Planetiler a partir de OpenStreetMap. © OpenStreetMap contributors (ODbL)."
+          case "$PARTS" in
+            both) what="el mapa vectorial (esquema OpenMapTiles, zoom 0-14, Planetiler) y los datos de rutas (teselas de Valhalla)" ;;
+            map) what="solo el mapa vectorial (esquema OpenMapTiles, zoom 0-14, Planetiler); las rutas siguen en su release anterior" ;;
+            routing) what="solo los datos de rutas (teselas de Valhalla); el mapa sigue en su release anterior" ;;
+          esac
+          gh release create "$tag" out/* --repo "$GITHUB_REPOSITORY" \
+            --title "Cuba sin conexión $(date -u +%Y-%m-%d)" \
+            --notes "Contiene $what, generados del extracto de Cuba de Geofabrik del $OSM_DATE. © colaboradores de OpenStreetMap (ODbL)."
 
-      # After the release, so cuba.json never points to a file that is not there yet. The app reads it from
+      # After the release, so cuba.json never points to files that are not there yet. The app reads it from
       # raw.githubusercontent.com, which has no per-IP limit like the GitHub API (60 an hour, shared behind NAT).
-      - name: Point cuba.json to the new map
+      - name: Point cuba.json to the new data
         if: inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="$TAG"
-          jq -n --arg tag "$tag" \
-            --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/cuba.pmtiles" \
-            --argjson size "$(stat -c %s cuba.pmtiles)" \
-            '{tag: $tag, url: $url, size: $size}' > cuba.json
+          python3 - <<'PY'
+          import json, os, pathlib
+          out, tag, date = pathlib.Path("out"), os.environ["TAG"], os.environ["OSM_DATE"]
+          base = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{tag}"
+          sums = {name: sha for sha, name in (line.split() for line in (out / "SHA256SUMS").read_text().splitlines())}
+          new = json.loads(pathlib.Path("cuba.json").read_text())
+          if (out / "cuba.pmtiles").exists():
+              # The app 0.2.0 reads only tag, url and size from the root: keep their meaning.
+              new.update(tag=tag, url=f"{base}/cuba.pmtiles", size=(out / "cuba.pmtiles").stat().st_size,
+                         sha256=sums["cuba.pmtiles"], osmDate=date)
+          if (out / "cuba-valhalla.tar.gz").exists():
+              new["routing"] = {
+                  "tag": tag, "url": f"{base}/cuba-valhalla.tar.gz",
+                  "size": (out / "cuba-valhalla.tar.gz").stat().st_size,
+                  "unpackedSize": int(pathlib.Path("valhalla-unpacked-size").read_text()),
+                  "sha256": sums["cuba-valhalla.tar.gz"], "osmDate": date,
+                  "engine": "valhalla", "formatVersion": 1,
+              }
+          pathlib.Path("cuba.json").write_text(json.dumps(new, indent=1) + "\n")
+          PY
           cat cuba.json >> "$GITHUB_STEP_SUMMARY"
           sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/cuba.json" --jq .sha 2>/dev/null) || sha=""
           gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/cuba.json" \
-            -f message="chore: point cuba.json to $tag" \
+            -f message="chore: point cuba.json to $TAG ($PARTS)" \
             -f content="$(base64 -w0 cuba.json)" \
             ${sha:+-f sha="$sha"}
