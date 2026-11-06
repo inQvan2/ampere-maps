@@ -1,6 +1,6 @@
-# ampere-maps
+# llego-app-releases
 
-Descargas públicas de [Ampere](https://github.com/inQvan2/ampere): el mapa de Cuba para usar sin conexión y los APK
+Descargas públicas de [¿Llego?](https://github.com/inQvan2/llego-app): el mapa de Cuba para usar sin conexión y los APK
 compilados. No contiene código de la app.
 
 ## Cuba sin conexión (mapa y rutas)
@@ -30,15 +30,15 @@ genera y mide, sin publicar.
 `size`, `unpackedSize`, `sha256`, `osmDate`, `engine`, `formatVersion`). El flujo lo reescribe después de crear la
 publicación. La app lo lee de `raw.githubusercontent.com` para saber si hay una versión nueva.
 
-## APK de Ampere
+## APK de ¿Llego?
 
 Cada versión se publica en [Releases](../../releases) como `app-vX.Y.Z`, con **un APK por procesador**:
 
 | Archivo | Para |
 |---|---|
-| `ampere-X.Y.Z-arm64-v8a.apk` | Casi todos los móviles actuales (64 bits). Si dudas, es este. |
-| `ampere-X.Y.Z-armeabi-v7a.apk` | Móviles antiguos de 32 bits. |
-| `ampere-X.Y.Z-x86_64.apk` | Emuladores y algunas tabletas. |
+| `llego-X.Y.Z-arm64-v8a.apk` | Casi todos los móviles actuales (64 bits). Si dudas, es este. |
+| `llego-X.Y.Z-armeabi-v7a.apk` | Móviles antiguos de 32 bits. |
+| `llego-X.Y.Z-x86_64.apk` | Emuladores y algunas tabletas. |
 
 `SHA256SUMS` lleva la suma de cada uno. Si se instala el que no corresponde, Android lo rechaza.
 
